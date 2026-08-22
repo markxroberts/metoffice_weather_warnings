@@ -1,0 +1,70 @@
+{
+  "title": "Met Office Weather Warnings",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Met Office Weather Warnings",
+        "description": "Uses the official Met Office regional severe-weather warning feed. Area filtering is best-effort and matches text present in the feed.",
+        "data": {
+          "region": "Region",
+          "area_filters": "Area filters",
+          "severities": "Warning levels",
+          "weather_types": "Weather types",
+          "scan_interval": "Update interval"
+        },
+        "data_description": {
+          "area_filters": "Optional comma-separated text, for example Nottingham, Nottinghamshire. A warning is kept when any term appears in the feed item. Leave blank for every warning in the selected region."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Met Office Weather Warnings",
+        "description": "Change the region and warning filters.",
+        "data": {
+          "region": "Region",
+          "area_filters": "Area filters",
+          "severities": "Warning levels",
+          "weather_types": "Weather types",
+          "scan_interval": "Update interval"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This Met Office region is already configured.",
+      "reconfigure_successful": "The integration has been reconfigured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Met Office Weather Warnings options",
+        "description": "Change local filtering and polling without changing the configured region.",
+        "data": {
+          "area_filters": "Area filters",
+          "severities": "Warning levels",
+          "weather_types": "Weather types",
+          "scan_interval": "Update interval"
+        },
+        "data_description": {
+          "area_filters": "Optional comma-separated text. A warning is kept when any term appears in the feed item."
+        }
+      }
+    }
+  },
+  "entity": {
+    "calendar": {
+      "warnings": {"name": "Warnings"}
+    },
+    "binary_sensor": {
+      "active": {"name": "Warning active"},
+      "upcoming": {"name": "Warning upcoming"}
+    },
+    "sensor": {
+      "active_count": {"name": "Active warning count"},
+      "upcoming_count": {"name": "Upcoming warning count"},
+      "highest_level": {"name": "Highest warning level"},
+      "next_warning": {"name": "Current or next warning"},
+      "next_start": {"name": "Current or next warning start"},
+      "next_end": {"name": "Current or next warning end"}
+    }
+  }
+}
