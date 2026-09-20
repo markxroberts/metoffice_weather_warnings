@@ -4,7 +4,7 @@ from datetime import timedelta
 
 DOMAIN = "metoffice_weather_warnings"
 NAME = "Met Office Weather Warnings"
-VERSION = "0.1.2"
+VERSION = "0.1.9"
 
 PLATFORMS = ["binary_sensor", "calendar", "sensor"]
 

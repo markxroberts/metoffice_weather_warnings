@@ -26,6 +26,7 @@ DESCRIPTIONS = (
     WarningSensorDescription(key="active_count", translation_key="active_count", kind="active_count", icon="mdi:counter"),
     WarningSensorDescription(key="upcoming_count", translation_key="upcoming_count", kind="upcoming_count", icon="mdi:counter"),
     WarningSensorDescription(key="highest_level", translation_key="highest_level", kind="highest_level", icon="mdi:alert-decagram"),
+    WarningSensorDescription(key="current_warning", translation_key="current_warning", kind="current_warning", icon="mdi:weather-cloudy-alert"),
     WarningSensorDescription(key="next_warning", translation_key="next_warning", kind="next_warning", icon="mdi:weather-cloudy-alert"),
     WarningSensorDescription(key="next_start", translation_key="next_start", kind="next_start", device_class=SensorDeviceClass.TIMESTAMP),
     WarningSensorDescription(key="next_end", translation_key="next_end", kind="next_end", device_class=SensorDeviceClass.TIMESTAMP),
@@ -44,9 +45,8 @@ class MetOfficeWarningsSensor(MetOfficeWarningsEntity, SensorEntity):
     _attr_attribution = ATTRIBUTION
 
     def __init__(self, coordinator: MetOfficeWarningsCoordinator, description: WarningSensorDescription) -> None:
-        super().__init__(coordinator)
+        super().__init__(coordinator, description.key)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.entry.entry_id}_{description.key}"
 
     def _active(self) -> list[WeatherWarning]:
         now = dt_util.utcnow()
@@ -56,11 +56,13 @@ class MetOfficeWarningsSensor(MetOfficeWarningsEntity, SensorEntity):
         now = dt_util.utcnow()
         return [warning for warning in self.coordinator.data.warnings if warning.start > now]
 
-    def _next(self) -> WeatherWarning | None:
-        now = dt_util.utcnow()
+    def _current(self) -> WeatherWarning | None:
         active = self._active()
-        if active:
-            return max(active, key=lambda item: (SEVERITY_RANK.get(item.severity, 0), -item.start.timestamp()))
+        if not active:
+            return None
+        return max(active, key=lambda item: (SEVERITY_RANK.get(item.severity, 0), -item.start.timestamp()))
+
+    def _next(self) -> WeatherWarning | None:
         upcoming = self._upcoming()
         return min(upcoming, key=lambda item: item.start) if upcoming else None
 
@@ -69,7 +71,7 @@ class MetOfficeWarningsSensor(MetOfficeWarningsEntity, SensorEntity):
         kind = self.entity_description.kind
         active = self._active()
         upcoming = self._upcoming()
-        warning = self._next()
+        warning = self._current() if kind == "current_warning" else self._next()
         if kind == "active_count":
             return len(active)
         if kind == "upcoming_count":
@@ -80,7 +82,7 @@ class MetOfficeWarningsSensor(MetOfficeWarningsEntity, SensorEntity):
             return max(active, key=lambda item: SEVERITY_RANK.get(item.severity, 0)).severity
         if warning is None:
             return None
-        if kind == "next_warning":
+        if kind in {"current_warning", "next_warning"}:
             return f"{warning.severity.title()} {warning.weather_type}"
         if kind == "next_start":
             return warning.start
@@ -90,9 +92,9 @@ class MetOfficeWarningsSensor(MetOfficeWarningsEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
-        if self.entity_description.kind != "next_warning":
+        if self.entity_description.kind not in {"current_warning", "next_warning"}:
             return None
-        warning = self._next()
+        warning = self._current() if self.entity_description.kind == "current_warning" else self._next()
         if warning is None:
             return None
         return {
@@ -100,6 +102,9 @@ class MetOfficeWarningsSensor(MetOfficeWarningsEntity, SensorEntity):
             "severity": warning.severity,
             "weather_type": warning.weather_type,
             "summary": warning.summary,
+            "further_details": warning.further_details,
+            "last_updated": warning.detail_updated.isoformat() if warning.detail_updated else None,
+            "update_reason": warning.update_reason,
             "start": warning.start.isoformat(),
             "end": warning.end.isoformat(),
             "matched_areas": list(warning.matched_areas),

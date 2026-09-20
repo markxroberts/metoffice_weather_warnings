@@ -152,9 +152,25 @@ def _parse_feed_datetime(value: str) -> datetime | None:
 def _normalise_human_datetime(value: str) -> datetime | None:
     text = _strip_html(value)
     text = re.sub(r"\s+", " ", text).strip(" .;,-")
-    text = re.sub(r"\((UTC(?:[+-]\d{1,2})?)\)", r"\1", text, flags=re.I)
+    text = re.sub(r"\((UTC(?:[+-]\d{1,2})?|GMT|BST)\)", r"\1", text, flags=re.I)
     text = re.sub(r"\b(on)\b", "", text, flags=re.I)
     text = re.sub(r"\s+", " ", text).strip()
+
+    # Met Office warning clocks labelled GMT/BST are UK civil times.  Attach
+    # Europe/London rather than a fixed offset so the result remains correct
+    # around daylight-saving transitions as well as during normal winter/summer.
+    uk_label = re.search(r"\b(GMT|BST)\b", text, re.I)
+    if uk_label:
+        stripped = re.sub(r"\b(?:GMT|BST)\b", "", text, flags=re.I)
+        stripped = re.sub(r"\s+", " ", stripped).strip()
+        for pattern in (
+            "%H:%M %a %d %b %Y", "%H:%M %a %d %B %Y",
+            "%H:%M %d %b %Y", "%H:%M %d %B %Y",
+        ):
+            try:
+                return datetime.strptime(stripped, pattern).replace(tzinfo=ZoneInfo("Europe/London"))
+            except ValueError:
+                continue
 
     iso = _parse_feed_datetime(text)
     if iso:
@@ -191,7 +207,9 @@ def _normalise_human_datetime(value: str) -> datetime | None:
         try:
             dt = datetime.strptime(text, pattern)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                # Unqualified human-readable Met Office warning times are UK local
+                # civil time, not necessarily UTC.
+                dt = dt.replace(tzinfo=ZoneInfo("Europe/London"))
             return dt
         except ValueError:
             continue
@@ -210,8 +228,10 @@ def _parse_rss_compact_datetime(
     value = f"{clean_time} {day} {month} {year}"
     for pattern in ("%H%M %d %b %Y", "%H%M %d %B %Y"):
         try:
-            # Met Office warning RSS validity clock times are UK local time.
-            return datetime.strptime(value, pattern).replace(tzinfo=ZoneInfo("Europe/London"))
+            # Met Office regional RSS validity clock times are UTC. Home Assistant
+            # will convert these timezone-aware values to the configured local timezone
+            # (Europe/London for a UK installation), giving BST during summer.
+            return datetime.strptime(value, pattern).replace(tzinfo=timezone.utc)
         except ValueError:
             continue
     return None

@@ -29,8 +29,7 @@ class MetOfficeWarningsCalendar(MetOfficeWarningsEntity, CalendarEntity):
     _attr_initial_color = "#f5a623"
 
     def __init__(self, coordinator: MetOfficeWarningsCoordinator) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.entry.entry_id}_calendar"
+        super().__init__(coordinator, "calendar")
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -64,6 +63,12 @@ class MetOfficeWarningsCalendar(MetOfficeWarningsEntity, CalendarEntity):
         ]
         if warning.matched_areas:
             description_parts.append(f"Matched area: {', '.join(warning.matched_areas)}")
+        if warning.further_details:
+            description_parts.extend(["", "Further details:", warning.further_details])
+        if warning.detail_updated:
+            description_parts.extend(["", f"Last updated: {warning.detail_updated.isoformat()}"])
+        if warning.update_reason:
+            description_parts.append(f"Update reason: {warning.update_reason}")
         if warning.link:
             description_parts.extend(["", f"Met Office: {warning.link}"])
         return CalendarEvent(

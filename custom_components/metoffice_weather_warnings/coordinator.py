@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
+import asyncio
 import logging
 
 from aiohttp import ClientError
@@ -23,6 +24,7 @@ from .const import (
     DOMAIN,
     RSS_URL,
 )
+from .details import WarningDetails, parse_warning_details
 from .models import WeatherWarning
 from .parser import ParseDiagnostics, parse_warnings
 
@@ -39,6 +41,7 @@ class MetOfficeWarningsCoordinator(DataUpdateCoordinator[WarningData]):
         self.entry = entry
         self._first_refresh = True
         self._previous: dict[str, WeatherWarning] = {}
+        self._detail_cache: dict[str, tuple[tuple[object, ...], WarningDetails]] = {}
         minutes = int(entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
         super().__init__(
             hass,
@@ -88,6 +91,8 @@ class MetOfficeWarningsCoordinator(DataUpdateCoordinator[WarningData]):
         except Exception as err:
             raise UpdateFailed(f"Unable to parse Met Office warning feed: {err}") from err
 
+        warnings = await self._async_enrich_warning_details(session, warnings)
+
         _LOGGER.debug(
             "Met Office %s feed refresh: %d bytes received, %d item(s), "
             "%d warning-like item(s), %d filtered, %d parse failure(s), "
@@ -119,6 +124,126 @@ class MetOfficeWarningsCoordinator(DataUpdateCoordinator[WarningData]):
         self._previous = current
         self._first_refresh = False
         return WarningData(warnings=warnings)
+
+    @staticmethod
+    def _detail_signature(warning: WeatherWarning) -> tuple[object, ...]:
+        """Values that indicate the linked warning may have been revised."""
+        return (
+            warning.link,
+            warning.title,
+            warning.start,
+            warning.end,
+            warning.summary,
+            warning.description,
+            warning.published,
+            warning.updated,
+        )
+
+    @staticmethod
+    def _details_are_useful(details: WarningDetails) -> bool:
+        """Return True when a detail-page result is worth caching."""
+        return any(
+            (
+                details.further_details,
+                details.last_updated,
+                details.update_reason,
+            )
+        )
+
+    async def _async_enrich_warning_details(
+        self,
+        session,
+        warnings: list[WeatherWarning],
+    ) -> list[WeatherWarning]:
+        """Fetch detail pages only for new or changed matching warnings."""
+        if not warnings:
+            return warnings
+
+        semaphore = asyncio.Semaphore(3)
+
+        async def enrich(warning: WeatherWarning) -> WeatherWarning:
+            if not warning.link:
+                return warning
+
+            signature = self._detail_signature(warning)
+            cached = self._detail_cache.get(warning.uid)
+            if (
+                cached is not None
+                and cached[0] == signature
+                and self._details_are_useful(cached[1])
+            ):
+                details = cached[1]
+                return replace(
+                    warning,
+                    further_details=details.further_details,
+                    detail_updated=details.last_updated,
+                    update_reason=details.update_reason,
+                )
+
+            async with semaphore:
+                try:
+                    async with session.get(
+                        warning.link,
+                        headers={
+                            "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
+                            "User-Agent": "Home Assistant Met Office Weather Warnings custom integration",
+                        },
+                        timeout=20,
+                    ) as response:
+                        response.raise_for_status()
+                        html = await response.text()
+                    details = parse_warning_details(html)
+                    # Do not permanently negative-cache an empty detail page. Some
+                    # extant warnings can initially return markup from which no detail
+                    # fields are available; retry those on the next coordinator poll.
+                    if self._details_are_useful(details):
+                        self._detail_cache[warning.uid] = (signature, details)
+                    else:
+                        self._detail_cache.pop(warning.uid, None)
+                        _LOGGER.debug(
+                            "Met Office detail page for warning %s contained no usable "
+                            "detail fields; will retry on the next refresh",
+                            warning.uid,
+                        )
+                except (ClientError, TimeoutError) as err:
+                    # Detail enrichment is useful but must never make the RSS warning
+                    # itself unavailable. Reuse prior details for the same warning if
+                    # possible and otherwise keep the base warning intact.
+                    _LOGGER.debug(
+                        "Unable to retrieve Met Office detail page for warning %s: %s",
+                        warning.uid,
+                        err,
+                    )
+                    old_cached = self._detail_cache.get(warning.uid)
+                    if old_cached is None:
+                        return warning
+                    details = old_cached[1]
+                except Exception as err:  # Defensive: website markup must not break coordinator updates.
+                    _LOGGER.debug(
+                        "Unable to parse Met Office detail page for warning %s: %s",
+                        warning.uid,
+                        err,
+                    )
+                    old_cached = self._detail_cache.get(warning.uid)
+                    if old_cached is None:
+                        return warning
+                    details = old_cached[1]
+
+            return replace(
+                warning,
+                further_details=details.further_details,
+                detail_updated=details.last_updated,
+                update_reason=details.update_reason,
+            )
+
+        enriched = await asyncio.gather(*(enrich(warning) for warning in warnings))
+
+        # Keep the cache bounded to warnings still present in the filtered feed.
+        current_ids = {warning.uid for warning in warnings}
+        self._detail_cache = {
+            uid: value for uid, value in self._detail_cache.items() if uid in current_ids
+        }
+        return list(enriched)
 
     def _fire_change_events(
         self,
@@ -154,6 +279,9 @@ class MetOfficeWarningsCoordinator(DataUpdateCoordinator[WarningData]):
                 "start": warning.start.isoformat(),
                 "end": warning.end.isoformat(),
                 "summary": warning.summary,
+                "further_details": warning.further_details,
+                "last_updated": warning.detail_updated.isoformat() if warning.detail_updated else None,
+                "update_reason": warning.update_reason,
                 "link": warning.link,
             },
         )

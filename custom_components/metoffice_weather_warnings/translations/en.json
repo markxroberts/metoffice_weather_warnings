@@ -52,19 +52,40 @@
   },
   "entity": {
     "calendar": {
-      "warnings": {"name": "Warnings"}
+      "warnings": {
+        "name": "Warnings"
+      }
     },
     "binary_sensor": {
-      "active": {"name": "Warning active"},
-      "upcoming": {"name": "Warning upcoming"}
+      "active": {
+        "name": "Warning active"
+      },
+      "upcoming": {
+        "name": "Warning upcoming"
+      }
     },
     "sensor": {
-      "active_count": {"name": "Active warning count"},
-      "upcoming_count": {"name": "Upcoming warning count"},
-      "highest_level": {"name": "Highest warning level"},
-      "next_warning": {"name": "Current or next warning"},
-      "next_start": {"name": "Current or next warning start"},
-      "next_end": {"name": "Current or next warning end"}
+      "active_count": {
+        "name": "Active warning count"
+      },
+      "upcoming_count": {
+        "name": "Upcoming warning count"
+      },
+      "highest_level": {
+        "name": "Highest warning level"
+      },
+      "next_warning": {
+        "name": "Next warning"
+      },
+      "next_start": {
+        "name": "Next warning start"
+      },
+      "next_end": {
+        "name": "Next warning end"
+      },
+      "current_warning": {
+        "name": "Current warning"
+      }
     }
   }
 }

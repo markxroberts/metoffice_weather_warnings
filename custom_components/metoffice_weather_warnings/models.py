@@ -18,6 +18,9 @@ class WeatherWarning:
     published: datetime | None = None
     updated: datetime | None = None
     matched_areas: tuple[str, ...] = ()
+    further_details: str | None = None
+    detail_updated: datetime | None = None
+    update_reason: str | None = None
 
     @property
     def fingerprint(self) -> tuple[object, ...]:
@@ -30,4 +33,7 @@ class WeatherWarning:
             self.summary,
             self.description,
             self.link,
+            self.further_details,
+            self.detail_updated,
+            self.update_reason,
         )

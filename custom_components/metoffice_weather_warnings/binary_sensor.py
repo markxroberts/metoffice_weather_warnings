@@ -32,9 +32,8 @@ class MetOfficeWarningsBinarySensor(MetOfficeWarningsEntity, BinarySensorEntity)
         coordinator: MetOfficeWarningsCoordinator,
         description: BinarySensorEntityDescription,
     ) -> None:
-        super().__init__(coordinator)
+        super().__init__(coordinator, description.key)
         self.entity_description = description
-        self._attr_unique_id = f"{coordinator.entry.entry_id}_{description.key}"
 
     @property
     def is_on(self) -> bool:
